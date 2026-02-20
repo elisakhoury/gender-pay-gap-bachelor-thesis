@@ -1,0 +1,209 @@
+---
+title: "Analyse 6 – Einflussfaktoren des Gender Pay Gap"
+author: "Elisa Khoury"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+# Pakete installieren falls sie fehlen
+needed <- c("modelsummary")
+new <- needed[!(needed %in% installed.packages()[,"Package"])]
+if(length(new)) install.packages(new)
+
+library(modelsummary)
+
+library(eurostat)
+library(dplyr)
+library(tidyr)
+library(plm)
+library(lmtest)
+library(sandwich)
+library(ggplot2)
+library(modelsummary)
+library(knitr)
+
+options(scipen = 999)
+theme_set(theme_minimal())
+
+get_year <- function(x) as.numeric(format(x, "%Y"))
+
+years <- 2010:2023
+industries <- c("B","C","F","G","H","I","J","K")
+country <- "DE"
+```
+
+# Datenaufbereitung
+
+```{r data}
+# -----------------------------
+# GPG
+# -----------------------------
+gpg <- get_eurostat("earn_gr_gpgr2") %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years, unit == "PC", nace_r2 %in% industries) %>%
+  transmute(time, Branche = nace_r2, GPG = values)
+
+# -----------------------------
+# Frauenanteil
+# -----------------------------
+emp_raw <- get_eurostat("lfsa_egan2")
+
+frauenanteil <- emp_raw %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years, sex %in% c("F","M"),
+         age == "Y15-64", nace_r2 %in% industries, unit == "THS_PER") %>%
+  group_by(time, Branche = nace_r2, sex) %>%
+  summarise(values = sum(values), .groups="drop") %>%
+  pivot_wider(names_from = sex, values_from = values) %>%
+  mutate(Frauenanteil = F/(F+M)*100) %>%
+  select(time, Branche, Frauenanteil)
+
+# -----------------------------
+# Teilzeitquote Frauen
+# -----------------------------
+pt_raw <- get_eurostat("lfsa_epgan2")
+
+teilzeit_branche <- pt_raw %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years, sex == "F",
+         nace_r2 %in% industries, unit == "THS_PER") %>%
+  group_by(time, Branche = nace_r2, worktime) %>%
+  summarise(values = sum(values), .groups="drop") %>%
+  pivot_wider(names_from = worktime, values_from = values)
+
+ft_col <- intersect(c("FT","FULL_TIME","FT_EMP"), names(teilzeit_branche))[1]
+pt_col <- intersect(c("PT","PART_TIME","PT_EMP"), names(teilzeit_branche))[1]
+
+teilzeit_branche <- teilzeit_branche %>%
+  mutate(Teilzeitquote_Frauen = .data[[pt_col]] / (.data[[ft_col]] + .data[[pt_col]]) * 100) %>%
+  select(time, Branche, Teilzeitquote_Frauen)
+
+# -----------------------------
+# Bildung
+# -----------------------------
+bildung_branche <- get_eurostat("edat_lfs_9910") %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years,
+         sex == "F", age == "Y25-64",
+         isced11 == "ED5-8",
+         nace_r2 %in% industries) %>%
+  group_by(time, Branche = nace_r2) %>%
+  summarise(Tertiaer_Frauen = mean(values), .groups="drop")
+
+# -----------------------------
+# Managerinnenanteil
+# -----------------------------
+occ_raw <- get_eurostat("lfsa_eisn2")
+
+managers_f <- occ_raw %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years,
+         sex == "F", nace_r2 %in% industries,
+         unit == "THS_PER", isco08 == "OC1") %>%
+  group_by(time, Branche = nace_r2) %>%
+  summarise(Managerinnen_F = sum(values), .groups="drop")
+
+women_level <- emp_raw %>%
+  mutate(time = get_year(TIME_PERIOD)) %>%
+  filter(geo == country, time %in% years,
+         sex == "F", age == "Y15-64",
+         nace_r2 %in% industries, unit == "THS_PER") %>%
+  group_by(time, Branche = nace_r2) %>%
+  summarise(Beschaeftigte_F = sum(values), .groups="drop")
+
+managerinnenanteil <- managers_f %>%
+  inner_join(women_level, by=c("time","Branche")) %>%
+  mutate(Managerinnenanteil_F = Managerinnen_F / Beschaeftigte_F * 100) %>%
+  select(time, Branche, Managerinnenanteil_F)
+
+# -----------------------------
+# PANEL
+# -----------------------------
+panel <- gpg %>%
+  left_join(frauenanteil, by=c("time","Branche")) %>%
+  left_join(teilzeit_branche, by=c("time","Branche")) %>%
+  left_join(bildung_branche, by=c("time","Branche")) %>%
+  left_join(managerinnenanteil, by=c("time","Branche"))
+```
+
+# Abbildungen
+
+```{r plots, fig.height=5, fig.width=8}
+ggplot(panel, aes(time, GPG, color=Branche, group=Branche)) +
+  geom_line() + geom_point()
+
+ggplot(panel, aes(time, Frauenanteil, color=Branche, group=Branche)) +
+  geom_line() + geom_point()
+
+ggplot(panel, aes(Frauenanteil, GPG, color=Branche)) +
+  geom_point() + geom_smooth(method="loess", se=TRUE, color="black")
+
+ggplot(panel %>% drop_na(Teilzeitquote_Frauen),
+       aes(Teilzeitquote_Frauen, GPG, color=Branche)) +
+  geom_point() + geom_smooth(method="loess", se=TRUE, color="black")
+
+ggplot(panel %>% drop_na(Tertiaer_Frauen),
+       aes(Tertiaer_Frauen, GPG, color=Branche)) +
+  geom_point() + geom_smooth(method="loess", se=TRUE, color="black")
+
+ggplot(panel %>% drop_na(Managerinnenanteil_F),
+       aes(Managerinnenanteil_F, GPG, color=Branche)) +
+  geom_point() + geom_smooth(method="loess", se=TRUE, color="black")
+```
+
+# Fehlende Werte
+
+```{r na_table}
+na_tab <- data.frame(
+  Variable = c("GPG", "Frauenanteil", "Teilzeitquote_Frauen", "Tertiaer_Frauen", "Managerinnenanteil_F"),
+  NA_Anzahl = c(
+    sum(is.na(panel$GPG)),
+    sum(is.na(panel$Frauenanteil)),
+    sum(is.na(panel$Teilzeitquote_Frauen)),
+    sum(is.na(panel$Tertiaer_Frauen)),
+    sum(is.na(panel$Managerinnenanteil_F))
+  )
+)
+
+kable(na_tab, caption = "Fehlende Werte im Panel")
+
+```
+
+# Panelregression
+
+```{r models}
+fit_fe <- function(data, fml){
+  df <- data %>% select(time, Branche, all.vars(fml)) %>% drop_na()
+  pdata <- pdata.frame(df, index=c("Branche","time"))
+  plm(fml, data=pdata, model="within", effect="twoways")
+}
+
+vcov_cluster <- function(model){
+  vcovHC(model, type="HC1", cluster="group")
+}
+
+m1 <- fit_fe(panel, GPG ~ Frauenanteil)
+m2 <- fit_fe(panel, GPG ~ Teilzeitquote_Frauen)
+m3 <- fit_fe(panel, GPG ~ Tertiaer_Frauen)
+m4 <- fit_fe(panel, GPG ~ Managerinnenanteil_F)
+
+models <- list(
+  "Frauenanteil" = m1,
+  "Teilzeitquote Frauen" = m2,
+  "Tertiärbildung Frauen" = m3,
+  "Managerinnenanteil" = m4
+)
+
+vcovs <- lapply(models, vcov_cluster)
+
+modelsummary(
+  models,
+  vcov = vcovs,
+  statistic = "({std.error})",
+  stars = TRUE,
+  fmt = 3,
+  gof_omit = "IC|Log|Adj|RMSE",
+  title = "Two-way Fixed Effects (Branche & Jahr), robuste Standardfehler"
+)
+```

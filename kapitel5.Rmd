@@ -1,0 +1,581 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# =======================================================================
+# KAPITEL 5: INTERNATIONALER VERGLEICH
+# Gender Pay Gap im europäischen Kontext
+# FINALE KORRIGIERTE VERSION (mit negativem Luxemburg-Wert)
+# =======================================================================
+
+library(tidyverse)
+library(eurostat)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(scales)
+
+# Theme für konsistente Grafiken
+theme_gpg <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(color = "gray40", size = 11),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(t = 10, r = 10, b = 10, l = 10)
+    )
+}
+
+# =======================================================================
+# 5.1 DATEN LADEN
+# =======================================================================
+
+cat("Lade Eurostat-Daten...\n")
+
+# Gender Pay Gap Daten von Eurostat
+# Dataset: earn_gr_gpgr2
+gpg_eurostat <- get_eurostat("earn_gr_gpgr2", 
+                             time_format = "num",
+                             filters = list(nace_r2 = "B-S_X_O"))
+
+# Aufbereiten
+gpg_eu <- gpg_eurostat %>%
+  select(geo, time, values) %>%
+  rename(country = geo, year = time, gpg = values) %>%
+  filter(!is.na(gpg))
+
+cat("✓ Daten erfolgreich geladen\n")
+cat("  Länder:", n_distinct(gpg_eu$country), "\n")
+cat("  Jahre:", min(gpg_eu$year), "-", max(gpg_eu$year), "\n")
+cat("  Datenpunkte:", nrow(gpg_eu), "\n\n")
+
+# =======================================================================
+# 5.2 LÄNDERAUSWAHL
+# =======================================================================
+
+cat(strrep("=", 70), "\n")
+cat("5.1 KRITERIEN FÜR DIE LÄNDERAUSWAHL\n")
+cat(strrep("=", 70), "\n")
+
+# Ausgewählte Vergleichsländer
+vergleichslaender <- c(
+  "DE",  # Deutschland
+  "SE",  # Schweden (Nordisches Modell)
+  "FR",  # Frankreich (Kontinentaleuropäisch)
+  "ES",  # Spanien (Südeuropa)
+  "PL",  # Polen (Osteuropa)
+  "NL",  # Niederlande (Westeuropa)
+  "IT",  # Italien (Südeuropa, niedriger Gap)
+  "AT",  # Österreich (Nachbarland, ähnlich)
+  "LU",  # Luxemburg (negativer Gap!)
+  "RO",  # Rumänien (niedriger Gap)
+  "BE",  # Belgien (Westeuropa)
+  "EE"   # Estland (oft höchster Gap)
+)
+
+cat("AUSWAHLKRITERIEN:\n")
+cat(strrep("-", 70), "\n")
+
+cat("1. Geografische Repräsentation:\n")
+cat("   - Nordeuropa: Schweden\n")
+cat("   - Westeuropa: Frankreich, Niederlande, Belgien\n")
+cat("   - Südeuropa: Spanien, Italien\n")
+cat("   - Osteuropa: Polen, Rumänien, Estland\n")
+cat("   - Zentraleuropa: Deutschland, Österreich, Luxemburg\n\n")
+
+cat("2. Wohlfahrtsstaatsregime:\n")
+cat("   - Sozialdemokratisch: Schweden\n")
+cat("   - Konservativ: Deutschland, Frankreich, Österreich\n")
+cat("   - Post-sozialistisch: Polen, Rumänien, Estland\n\n")
+
+cat("3. Performance:\n")
+cat("   - Reverse Gap: Luxemburg (-0.9% = Frauen verdienen MEHR!)\n")
+cat("   - Niedriger Gap: Rumänien, Italien\n")
+cat("   - Hoher Gap: Estland, Österreich\n")
+cat("   - Mittleres Feld: Deutschland, Frankreich\n\n")
+
+# Filtern auf ausgewählte Länder
+gpg_vergleich <- gpg_eu %>%
+  filter(country %in% vergleichslaender)
+
+# Ländernamen hinzufügen
+country_names <- c(
+  "DE" = "Deutschland", "SE" = "Schweden", "FR" = "Frankreich",
+  "ES" = "Spanien", "PL" = "Polen",
+  "NL" = "Niederlande", "IT" = "Italien", "AT" = "Österreich",
+  "LU" = "Luxemburg", "RO" = "Rumänien", "BE" = "Belgien",
+  "EE" = "Estland"
+)
+
+gpg_vergleich <- gpg_vergleich %>%
+  mutate(country_name = country_names[country])
+
+# =======================================================================
+# 5.2 AKTUELLER STAND (2023)
+# =======================================================================
+
+cat("\n")
+cat(strrep("=", 70), "\n")
+cat("5.2 ÜBERBLICK: GENDER PAY GAP IN DEN AUSGEWÄHLTEN LÄNDERN\n")
+cat(strrep("=", 70), "\n")
+
+# Aktuelle Werte 2023
+gpg_2023 <- gpg_vergleich %>%
+  filter(year == 2023) %>%
+  arrange(gpg)
+
+cat("GENDER PAY GAP 2023 (aufsteigend sortiert):\n")
+cat(strrep("-", 70), "\n")
+print(gpg_2023 %>% 
+        select(country_name, gpg) %>%
+        rename(`Land` = country_name, `GPG (%)` = gpg))
+
+cat("\n\n** WICHTIG: Negativer Wert = Frauen verdienen MEHR als Männer **\n\n")
+
+cat("STATISTISCHE KENNZAHLEN:\n")
+cat(strrep("-", 70), "\n")
+cat("Minimum:  ", round(min(gpg_2023$gpg, na.rm = TRUE), 1), "% (", 
+    gpg_2023$country_name[which.min(gpg_2023$gpg)], ")\n", sep = "")
+cat("Maximum:  ", round(max(gpg_2023$gpg, na.rm = TRUE), 1), "% (", 
+    gpg_2023$country_name[which.max(gpg_2023$gpg)], ")\n", sep = "")
+cat("Mittelwert:", round(mean(gpg_2023$gpg, na.rm = TRUE), 1), "%\n")
+cat("Median:   ", round(median(gpg_2023$gpg, na.rm = TRUE), 1), "%\n")
+cat("Spannweite:", round(max(gpg_2023$gpg, na.rm = TRUE) - min(gpg_2023$gpg, na.rm = TRUE), 1), " PP\n\n")
+
+# Deutschland's Position
+de_rank <- which(gpg_2023$country == "DE")
+cat("DEUTSCHLAND'S POSITION:\n")
+cat(strrep("-", 70), "\n")
+cat("Rang:", de_rank, "von", nrow(gpg_2023), "Ländern\n")
+cat("Wert:", round(gpg_2023$gpg[gpg_2023$country == "DE"], 1), "%\n")
+cat("Über dem Durchschnitt:", 
+    round(gpg_2023$gpg[gpg_2023$country == "DE"] - mean(gpg_2023$gpg, na.rm = TRUE), 1), " PP\n\n")
+
+# =======================================================================
+# 5.3 VISUALISIERUNGEN
+# =======================================================================
+
+cat("Erstelle Visualisierungen...\n\n")
+
+# Grafik 1: Balkendiagramm 2023
+# WICHTIG: Muss negative Werte darstellen können!
+p1 <- ggplot(gpg_2023, aes(x = reorder(country_name, gpg), y = gpg)) +
+  geom_col(aes(fill = country == "DE"), width = 0.7) +
+  coord_flip() +
+  
+  # Null-Linie hinzufügen
+  geom_hline(yintercept = 0, color = "black", size = 0.8, linetype = "solid") +
+  
+  # Texte mit korrekter Position für positive UND negative Werte
+  geom_text(aes(label = paste0(round(gpg, 1), "%")), 
+            hjust = ifelse(gpg_2023$gpg < 0, 1.2, -0.2),
+            size = 3.5) +
+  
+  scale_fill_manual(values = c("grey60", "#D55E00"), 
+                    guide = "none") +
+  
+  # Y-Achse muss negative Werte einschließen!
+  scale_y_continuous(limits = c(min(gpg_2023$gpg, na.rm = TRUE) - 2, 
+                                 max(gpg_2023$gpg, na.rm = TRUE) + 3),
+                     breaks = seq(-5, 25, 5),
+                     labels = function(x) paste0(x, "%")) +
+  
+  labs(title = "Gender Pay Gap im europäischen Vergleich (2023)",
+       subtitle = "Deutschland hervorgehoben | Negativer Wert = Frauen verdienen mehr",
+       x = NULL,
+       y = "Gender Pay Gap (%)") +
+  
+  theme_gpg() +
+  theme(axis.text.y = element_text(size = 10))
+
+print(p1)
+ggsave("gpg_europa_2023.png", p1, width = 10, height = 8, dpi = 300)
+
+# Grafik 2a: Zeitreihe Hauptvergleichsländer
+ausgewaehlte <- c("DE", "SE", "IT", "RO", "EE", "AT")
+
+gpg_zeitreihe <- gpg_vergleich %>%
+  filter(country %in% ausgewaehlte, year >= 2010) %>%
+  group_by(country) %>%
+  arrange(year) %>%
+  ungroup()
+
+p2 <- ggplot(gpg_zeitreihe, aes(x = year, y = gpg, 
+                                 color = country_name, 
+                                 group = country_name)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  
+  geom_hline(yintercept = 0, color = "grey40", linetype = "dashed", alpha = 0.5) +
+  
+  scale_color_manual(values = c(
+    "Deutschland" = "#D55E00",
+    "Schweden" = "#0072B2",
+    "Italien" = "#009E73",
+    "Rumänien" = "#CC79A7",
+    "Estland" = "#E69F00",
+    "Österreich" = "#56B4E9"
+  )) +
+  
+  scale_y_continuous(limits = c(0, 35),
+                     breaks = seq(0, 35, 5),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = seq(2010, 2023, 2)) +
+  
+  labs(title = "Entwicklung des Gender Pay Gap (2010-2023)",
+       subtitle = "Ausgewählte EU-Länder im Vergleich",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       color = "Land") +
+  
+  theme_gpg()
+
+print(p2)
+ggsave("gpg_europa_entwicklung.png", p2, width = 12, height = 7, dpi = 300)
+
+# Grafik 2b: Restliche Länder inkl. Luxemburg
+andere_laender <- setdiff(vergleichslaender, ausgewaehlte)
+
+gpg_zeitreihe_alle <- gpg_vergleich %>%
+  filter(country %in% andere_laender, year >= 2010) %>%
+  group_by(country) %>%
+  arrange(year) %>%
+  ungroup()
+
+# WICHTIG: Y-Achse muss negative Werte für Luxemburg einschließen!
+p2b <- ggplot(gpg_zeitreihe_alle, aes(x = year, y = gpg, 
+                                       color = country_name, 
+                                       group = country_name)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  
+  geom_hline(yintercept = 0, color = "black", size = 0.8) +
+  
+  scale_color_manual(values = c(
+    "Belgien" = "#E69F00",
+    "Spanien" = "#56B4E9",
+    "Niederlande" = "#009E73",
+    "Luxemburg" = "#F0E442",
+    "Frankreich" = "#0072B2",
+    "Polen" = "#D55E00"
+  )) +
+  
+  # Y-Achse angepasst für negative Werte
+  scale_y_continuous(limits = c(min(gpg_zeitreihe_alle$gpg, na.rm = TRUE) - 2, 
+                                 max(gpg_zeitreihe_alle$gpg, na.rm = TRUE) + 2),
+                     breaks = seq(-5, 20, 5),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = seq(2010, 2023, 2)) +
+  
+  labs(title = "Entwicklung des Gender Pay Gap (2010-2023)",
+       subtitle = "Weitere EU-Länder im Vergleich | Luxemburg mit negativem Gap",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       color = "Land") +
+  
+  theme_gpg()
+
+print(p2b)
+ggsave("gpg_europa_entwicklung_weitere.png", p2b, width = 12, height = 7, dpi = 300)
+
+# Grafik 3: Veränderung 2010-2023
+gpg_change <- gpg_vergleich %>%
+  filter(year %in% c(2010, 2023)) %>%
+  select(country, country_name, year, gpg) %>%
+  pivot_wider(names_from = year, 
+              values_from = gpg,
+              names_prefix = "y") %>%
+  mutate(change = y2023 - y2010) %>%
+  filter(!is.na(change)) %>%
+  arrange(change)
+
+
+
+p3 <- ggplot(gpg_change, aes(x = reorder(country_name, change), 
+                              y = change)) +
+  geom_col(aes(fill = change < 0), width = 0.7) +
+  coord_flip() +
+  
+  geom_text(aes(label = sprintf("%+.1f PP", change)), 
+            hjust = ifelse(gpg_change$change < 0, 1.2, -0.2),
+            size = 3.5) +
+  
+  geom_hline(yintercept = 0, color = "black", size = 0.5) +
+  
+  scale_fill_manual(values = c("TRUE" = "#009E73", "FALSE" = "#D55E00"),
+                    labels = c("Anstieg", "Rückgang"),
+                    name = "") +
+  
+  labs(title = "Veränderung des Gender Pay Gap (2010-2023)",
+       subtitle = "In Prozentpunkten",
+       x = NULL,
+       y = "Veränderung (Prozentpunkte)") +
+  
+  theme_gpg() +
+  theme(axis.text.y = element_text(size = 10))
+
+print(p3)
+ggsave("gpg_europa_veraenderung.png", p3, width = 10, height = 8, dpi = 300)
+
+# =======================================================================
+# 5.3 BEST-PRACTICE ANALYSE
+# =======================================================================
+
+cat("\n")
+cat(strrep("=", 70), "\n")
+cat("5.3 BEST-PRACTICE-BEISPIELE (LÄNDER MIT NIEDRIGEM GAP)\n")
+cat(strrep("=", 70), "\n")
+
+# Top 3 Länder mit niedrigstem Gap 2023
+best_practice <- gpg_2023 %>%
+  filter(!is.na(gpg)) %>%
+  arrange(gpg) %>%
+  head(3)
+
+cat("TOP 3 LÄNDER MIT NIEDRIGSTEM GENDER PAY GAP (2023):\n")
+cat(strrep("-", 70), "\n")
+
+for(i in 1:nrow(best_practice)) {
+  gpg_val <- best_practice$gpg[i]
+  interpretation <- if(gpg_val < 0) {
+    " (Frauen verdienen MEHR)"
+  } else if(gpg_val < 5) {
+    " (nahezu Gleichheit)"
+  } else {
+    ""
+  }
+  
+  cat(i, ". ", best_practice$country_name[i], ": ", 
+      round(gpg_val, 1), "%", interpretation, "\n", sep = "")
+}
+
+cat("\n\nZEITLICHE ENTWICKLUNG DER BEST-PRACTICE-LÄNDER:\n")
+cat(strrep("-", 70), "\n")
+
+best_practice_entwicklung <- gpg_vergleich %>%
+  filter(country %in% best_practice$country, year %in% c(2010, 2023)) %>%
+  select(country, country_name, year, gpg) %>%
+  pivot_wider(names_from = year, values_from = gpg, names_prefix = "y") %>%
+  mutate(
+    `Veränderung` = y2023 - y2010,
+    `Ø jährliche Veränderung` = `Veränderung` / 13
+  ) %>%
+  rename(
+    `GPG 2010` = y2010,
+    `GPG 2023` = y2023,
+    `Land` = country_name
+  ) %>%
+  select(Land, `GPG 2010`, `GPG 2023`, `Veränderung`, `Ø jährliche Veränderung`)
+
+print(best_practice_entwicklung)
+
+# =======================================================================
+# 5.4 DEUTSCHLAND IM VERGLEICH
+# =======================================================================
+
+cat("\n\n")
+cat(strrep("=", 70), "\n")
+cat("5.4 ABWEICHUNGEN UND BESONDERHEITEN DEUTSCHLANDS\n")
+cat(strrep("=", 70), "\n")
+
+# Deutschland vs. EU-Durchschnitt
+gpg_de_vs_eu <- gpg_vergleich %>%
+  filter(year >= 2010) %>%
+  group_by(year) %>%
+  summarise(
+    de_wert = gpg[country == "DE"],
+    eu_durchschnitt = mean(gpg, na.rm = TRUE),
+    differenz = de_wert - eu_durchschnitt,
+    .groups = "drop"
+  )
+
+cat("DEUTSCHLAND VS. EU-DURCHSCHNITT (Ausgewählte Länder):\n")
+cat(strrep("-", 70), "\n")
+print(gpg_de_vs_eu %>%
+        mutate(across(where(is.numeric), ~round(., 1))) %>%
+        rename(Jahr = year,
+               `Deutschland` = de_wert,
+               `EU-Ø` = eu_durchschnitt,
+               `Differenz` = differenz))
+
+cat("\n\nDEUTSCHLAND IM QUARTILVERGLEICH 2023:\n")
+cat(strrep("-", 70), "\n")
+quartile <- quantile(gpg_2023$gpg, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+de_wert_2023 <- gpg_2023$gpg[gpg_2023$country == "DE"]
+
+cat("25%-Perzentil:", round(quartile[1], 1), "%\n")
+cat("Median:        ", round(quartile[2], 1), "%\n")
+cat("75%-Perzentil:", round(quartile[3], 1), "%\n")
+cat("Deutschland:   ", round(de_wert_2023, 1), "%\n\n")
+
+if(de_wert_2023 > quartile[3]) {
+  cat("→ Deutschland liegt im OBEREN QUARTIL (schlechteste 25%)\n")
+} else if(de_wert_2023 > quartile[2]) {
+  cat("→ Deutschland liegt im DRITTEN QUARTIL (über dem Median)\n")
+} else if(de_wert_2023 > quartile[1]) {
+  cat("→ Deutschland liegt im ZWEITEN QUARTIL (unter dem Median)\n")
+} else {
+  cat("→ Deutschland liegt im UNTEREN QUARTIL (beste 25%)\n")
+}
+
+# Grafik 4: Deutschland vs. EU-Durchschnitt
+p4 <- ggplot(gpg_de_vs_eu, aes(x = year)) +
+  geom_line(aes(y = de_wert, color = "Deutschland"), size = 1.3) +
+  geom_line(aes(y = eu_durchschnitt, color = "EU-Durchschnitt"), 
+            size = 1.3, linetype = "dashed") +
+  geom_point(aes(y = de_wert, color = "Deutschland"), size = 3) +
+  geom_point(aes(y = eu_durchschnitt, color = "EU-Durchschnitt"), size = 3) +
+  
+  geom_ribbon(aes(ymin = eu_durchschnitt, ymax = de_wert),
+              alpha = 0.2, fill = "#D55E00") +
+  
+  scale_color_manual(values = c("Deutschland" = "#D55E00",
+                                "EU-Durchschnitt" = "#0072B2")) +
+  
+  scale_y_continuous(limits = c(0, 25),
+                     breaks = seq(0, 25, 5),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = seq(2010, 2023, 2)) +
+  
+  labs(title = "Deutschland vs. EU-Durchschnitt (2010-2023)",
+       subtitle = "Grau schattiert: Differenz zu EU-Durchschnitt",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       color = "") +
+  
+  theme_gpg()
+
+print(p4)
+ggsave("gpg_deutschland_vs_eu.png", p4, width = 12, height = 7, dpi = 300)
+
+# =======================================================================
+# ZUSAMMENFASSENDE STATISTIKEN
+# =======================================================================
+
+cat("\n\n")
+cat(strrep("=", 70), "\n")
+cat("ZUSAMMENFASSUNG FÜR KAPITEL 5\n")
+cat(strrep("=", 70), "\n")
+
+# Konvergenz-Analyse
+konvergenz_test <- gpg_vergleich %>%
+  filter(year %in% c(2010, 2023)) %>%
+  select(country, year, gpg) %>%
+  pivot_wider(names_from = year, values_from = gpg, names_prefix = "y") %>%
+  filter(!is.na(y2010) & !is.na(y2023))
+
+cor_test <- cor.test(konvergenz_test$y2010, konvergenz_test$y2023)
+
+cat("KONVERGENZ-ANALYSE:\n")
+cat(strrep("-", 70), "\n")
+cat("Korrelation GPG 2010 vs. 2023:", round(cor_test$estimate, 3), "\n")
+cat("p-Wert:", format.pval(cor_test$p.value, digits = 3), "\n")
+cat("\n→ ", ifelse(cor_test$estimate > 0.5, 
+                  "Länder mit hohem Gap 2010 haben tendenziell auch 2023 hohen Gap",
+                  "Keine starke Persistenz erkennbar"), "\n\n")
+
+# Export
+write.csv(gpg_2023, "gpg_europa_2023.csv", row.names = FALSE)
+write.csv(gpg_change, "gpg_europa_veraenderung.csv", row.names = FALSE)
+write.csv(gpg_de_vs_eu, "gpg_deutschland_vs_eu.csv", row.names = FALSE)
+
+cat("\n✓ Alle Analysen abgeschlossen und Grafiken gespeichert\n")
+cat("✓ CSV-Dateien für Tabellen exportiert\n")
+
+# =======================================================================
+# DIAGNOSTIK
+# =======================================================================
+
+cat("\n\n")
+cat(strrep("=", 70), "\n")
+cat("DIAGNOSTIK: DATENVERFÜGBARKEIT PRO LAND\n")
+cat(strrep("=", 70), "\n")
+
+datenverfuegbarkeit <- gpg_vergleich %>%
+  group_by(country, country_name) %>%
+  summarise(
+    `Erste Jahr` = min(year),
+    `Letzte Jahr` = max(year),
+    `Anzahl Jahre` = n(),
+    `Wert 2023` = ifelse(any(year == 2023), gpg[year == 2023], NA),
+    `Wert 2010` = ifelse(any(year == 2010), gpg[year == 2010], NA),
+    .groups = "drop"
+  ) %>%
+  arrange(country_name)
+
+print(datenverfuegbarkeit)
+
+cat("\n✓ Diagnostik abgeschlossen\n")
+```
+
+```{r}
+# =======================================================================
+# BEST-PRACTICE-LÄNDER VISUALISIERUNG – Doppelbalken
+# =======================================================================
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+best_practice_laender <- c("LU", "BE", "IT", "RO")
+
+# Daten vorbereiten
+gpg_best_practice <- gpg_vergleich %>%
+  filter(country %in% best_practice_laender, year %in% c(2010, 2023)) %>%
+  pivot_wider(names_from = year, values_from = gpg, names_prefix = "y") %>%
+  mutate(country_name = country_names[country]) %>%
+  pivot_longer(cols = c(y2010, y2023), names_to = "year", values_to = "gpg") %>%
+  mutate(year = recode(year, "y2010" = "2010", "y2023" = "2023"))
+
+# Doppelbalken-Plot
+p_best <- ggplot(gpg_best_practice, aes(x = reorder(country_name, gpg), y = gpg, fill = year)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  
+  # Prozentzahlen auf den Balken
+  geom_text(aes(label = paste0(round(gpg,1), "%")),
+            position = position_dodge(width = 0.7),
+            vjust = -0.5, size = 3.5) +
+  
+  coord_flip() +
+  
+  # Farben für 2010 vs 2023
+  scale_fill_manual(values = c("2010" = "#0072B2", "2023" = "#D55E00")) +
+  
+  # Achsen & Labels
+  labs(
+    title = "Best-Practice-Länder: Gender Pay Gap (2010 & 2023)",
+    subtitle = "Vergleich 2010 vs 2023",
+    x = NULL,
+    y = "Gender Pay Gap (%)",
+    fill = "Jahr"
+  ) +
+  
+  # Theme
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 10),
+        legend.position = "top")
+
+# Plot anzeigen
+print(p_best)
+
+# Speichern
+ggsave("gpg_best_practice_doppelbalken.png", p_best, width = 10, height = 6, dpi = 300)
+
+
+
+```
+```{r}
+
+
+```
+
+```
+

@@ -1,0 +1,535 @@
+---
+title: "Der Gender Pay Gap in Deutschland im internationalen Vergleich"
+author: "Elisa Khoury"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+    fig_width: 12
+    fig_height: 7
+subtitle: Entwicklung und Einflussfaktoren
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = 'center',
+  dpi = 300
+)
+```
+
+```{r packages, include=FALSE}
+# Pakete laden/installieren
+packages <- c("tidyverse", "eurostat", "lubridate", "scales", 
+              "ggplot2", "gridExtra", "knitr", "kableExtra", "patchwork")
+
+for(pkg in packages) {
+  if(!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Theme für konsistente Grafiken
+theme_gpg <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(color = "gray40", size = 11),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(t = 10, r = 10, b = 10, l = 10)
+    )
+}
+```
+
+# Einleitung
+
+Der Gender Pay Gap bezeichnet die geschlechtsspezifischen Unterschiede im Einkommen und ist nach wie vor ein zentrales Thema in Wirtschaft und Gesellschaft. Diese Analyse untersucht die historische Entwicklung des Gender Pay Gap in Deutschland von 1995 bis 2024 und ordnet die Ergebnisse im internationalen Vergleich ein.
+
+# Datengrundlage und Methodik
+
+## Datenquellen
+
+Die Analyse basiert auf offiziellen Statistiken von:
+
+- **Statistisches Bundesamt (Destatis)**: Verdienststrukturerhebung und monatliche Verdiensterhebung
+- **Eurostat**: EU-harmonisierte Gender Pay Gap Daten
+
+
+## Messmethoden
+
+Der **unbereinigte Gender Pay Gap** misst den durchschnittlichen Lohnunterschied zwischen Frauen und Männern ohne Berücksichtigung struktureller Faktoren.
+
+Der **bereinigte Gender Pay Gap** kontrolliert für Faktoren wie Bildung, Berufserfahrung, Branche und Beschäftigungsumfang.
+
+**Berechnung:** 
+$$\text{GPG} = \frac{\text{Stundenlohn}_{\text{Männer}} - \text{Stundenlohn}_{\text{Frauen}}}{\text{Stundenlohn}_{\text{Männer}}} \times 100$$
+
+## Einschränkungen der Datenverfügbarkeit
+
+**Wichtiger Hinweis zur regionalen Differenzierung:**
+
+Für den Zeitraum 1995 bis 2005 liegen lediglich Daten für Deutschland gesamt vor. Eine regionale Aufschlüsselung nach Ost- und Westdeutschland ist erst ab 2006 verfügbar, da die zuvor verwendeten Datenquellen (Europäisches Haushaltspanel 1995-2001 und Sozio-ökonomisches Panel 2002-2005) keine zuverlässige regionale Differenzierung ermöglichten. 
+
+Ab 2006 basieren die Daten auf der Verdienststrukturerhebung, die eine regionale Aufschlüsselung erlaubt. Aus diesem Grund beschränkt sich der Ost-West-Vergleich in der vorliegenden Analyse auf den Zeitraum 2006-2024.
+
+```{r daten-laden, include=FALSE}
+# =======================================================================
+# KORREKTE DATEN laut offizieller Destatis-Tabelle
+# =======================================================================
+
+# Daten für Deutschland - MIT KORREKTEN NA-WERTEN
+gpg_deutschland <- data.frame(
+  year = 1995:2024,
+  
+  # Deutschland gesamt: VOLLSTÄNDIG verfügbar 1995-2024
+  gpg_gesamt = c(21, 21, 21, 22, 19, 21, 21, 22, 23, 23,  # 1995-2004
+                 22, 23, 23, 23, 23, 22, 22, 23, 22, 22,  # 2005-2014
+                 22, 21, 20, 20, 19, 18, 18, 18, 18, 16),  # 2015-2024
+  
+  # Westdeutschland: NUR ab 2006 verfügbar
+  gpg_west = c(rep(NA, 11),  # 1995-2005: KEINE DATEN
+               24, 24, 24, 24, 24, 24, 24, 23, 24, 24,    # 2006-2015
+               22, 22, 21, 20, 20, 19, 19, 19, 17),       # 2016-2024
+  
+  # Ostdeutschland: NUR ab 2006 verfügbar
+  gpg_ost = c(rep(NA, 11),  # 1995-2005: KEINE DATEN
+              6, 6, 6, 6, 7, 7, 8, 8, 9, 8,    # 2006-2015
+              7, 7, 7, 7, 6, 7, 7, 6, 5)       # 2016-2024
+)
+
+# Bereinigter GPG
+gpg_bereinigt <- data.frame(
+  year = c(2006, 2010, 2014, 2018, 2022, 2023, 2024),
+  gpg_bereinigt_gesamt = c(8, 7, 7, 6, 7, 7, 6),
+  gpg_bereinigt_west = c(8, 7, 7, 6, 7, 7, 6),
+  gpg_bereinigt_ost = c(8, 10, 9, 9, 9, 9, 9)
+)
+
+# Zusammenführen
+gpg_komplett <- gpg_deutschland %>%
+  left_join(gpg_bereinigt, by = "year")
+
+# Gesetzliche Reformen
+ereignisse <- data.frame(
+  year = c(2001, 2006, 2015, 2017, 2018, 2022),
+  ereignis = c("Teilzeit- und\nBefristungsgesetz",
+               "Allgemeines\nGleichbehandlungsgesetz",
+               "Mindestlohn-\nerhöhung",
+               "Entgelt-\ntransparenzgesetz",
+               "Gesetz für mehr\nFrauen in Führung",
+               "EU-Richtlinie\nLohntransparenz"),
+  y_position = c(24, 25, 23, 22, 21, 19)
+)
+
+# Datensatz nur mit Ost-West-Daten (ab 2006)
+gpg_regional_verfuegbar <- gpg_komplett %>%
+  filter(!is.na(gpg_west) & !is.na(gpg_ost))
+```
+
+# Historische Entwicklung in Deutschland
+
+## Überblick über die Entwicklung (1995-2024)
+
+```{r entwicklung-gesamt, fig.cap="Abbildung 1: Entwicklung des unbereinigten Gender Pay Gap in Deutschland 1995-2024"}
+ggplot(gpg_komplett, aes(x = year, y = gpg_gesamt)) +
+  geom_line(color = "#D55E00", size = 1.3) +
+  geom_point(color = "#D55E00", size = 2.5) +
+  
+  # Gesetzliche Reformen markieren
+  geom_vline(data = ereignisse, 
+             aes(xintercept = year),
+             linetype = "dashed", 
+             color = "black", 
+             alpha = 0.5) +
+  
+  geom_text(data = ereignisse,
+            aes(x = year, y = y_position, label = ereignis),
+            size = 2.8,
+            angle = 90,
+            hjust = 0,
+            vjust = -0.3,
+            color = "gray30") +
+  
+  # Datenquellenwechsel markieren
+  geom_vline(xintercept = c(2001.5, 2005.5, 2021.5), 
+             linetype = "dotted", color = "gray70", alpha = 0.4) +
+  
+  scale_y_continuous(limits = c(0, 28),
+                     breaks = seq(0, 28, 4),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = seq(1995, 2024, 5)) +
+  
+  labs(title = "Entwicklung des unbereinigten Gender Pay Gap in Deutschland",
+       subtitle = "Mit wichtigen gesetzlichen Reformen (1995-2024)",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       caption = "Quelle: Statistisches Bundesamt\nDatenquellen: 1995-2001 ECHP, 2002-2005 SOEP, ab 2006 Verdienststrukturerhebung") +
+  
+  theme_gpg() +
+  theme(plot.caption = element_text(hjust = 0, size = 8, color = "gray50"))
+```
+
+### Zentrale Erkenntnisse
+
+```{r statistiken-gesamt}
+# Deskriptive Statistiken berechnen
+stats_gesamt <- gpg_komplett %>%
+  summarise(
+    `Mittelwert (1995-2024)` = round(mean(gpg_gesamt, na.rm = TRUE), 2),
+    `Median` = round(median(gpg_gesamt, na.rm = TRUE), 2),
+    `Standardabweichung` = round(sd(gpg_gesamt, na.rm = TRUE), 2),
+    `Minimum` = min(gpg_gesamt, na.rm = TRUE),
+    `Jahr (Min)` = year[which.min(gpg_gesamt)],
+    `Maximum` = max(gpg_gesamt, na.rm = TRUE),
+    `Jahr (Max)` = year[which.max(gpg_gesamt)],
+    `Gesamtveränderung` = gpg_gesamt[year == 2024] - gpg_gesamt[year == 1995]
+  )
+
+kable(t(stats_gesamt), 
+      col.names = c("Wert"),
+      caption = "Tabelle 1: Deskriptive Statistiken des Gender Pay Gap (Deutschland gesamt)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+```
+
+**Interpretation:**
+
+- Der unbereinigte Gender Pay Gap ist von **`r gpg_komplett$gpg_gesamt[1]`%** (1995) auf **`r gpg_komplett$gpg_gesamt[30]`%** (2024) gesunken - ein Rückgang um **`r gpg_komplett$gpg_gesamt[1] - gpg_komplett$gpg_gesamt[30]` Prozentpunkte**.
+- Lange Stagnationsphase von 1995 bis etwa 2013 bei 21-23%
+- Deutlicher Rückgang ab 2019 erkennbar
+- Die Standardabweichung von `r round(sd(gpg_komplett$gpg_gesamt, na.rm = TRUE), 2)` PP deutet auf moderate Schwankungen hin
+
+## Ost-West-Vergleich (ab 2006)
+
+**Hinweis:** Regionale Daten sind erst ab 2006 verfügbar. Die Analyse des Ost-West-Vergleichs beschränkt sich daher auf den Zeitraum 2006-2024.
+
+```{r ost-west-vergleich, fig.cap="Abbildung 2: Gender Pay Gap im Ost-West-Vergleich (2006-2024)"}
+# Long format nur mit verfügbaren Daten
+gpg_regional <- gpg_regional_verfuegbar %>%
+  select(year, gpg_gesamt, gpg_west, gpg_ost) %>%
+  pivot_longer(cols = c(gpg_gesamt, gpg_west, gpg_ost),
+               names_to = "region",
+               values_to = "wert") %>%
+  mutate(region = factor(region,
+                         levels = c("gpg_gesamt", "gpg_west", "gpg_ost"),
+                         labels = c("Deutschland gesamt", 
+                                   "Westdeutschland", 
+                                   "Ostdeutschland")))
+
+ggplot(gpg_regional, aes(x = year, y = wert, color = region, group = region)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  
+  scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73")) +
+  scale_y_continuous(limits = c(0, 28),
+                     breaks = seq(0, 28, 4),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = seq(2006, 2024, 3)) +
+  
+  labs(title = "Unbereinigter Gender Pay Gap: Ost-West-Vergleich",
+       subtitle = "2006-2024 (regionale Daten erst ab 2006 verfügbar)",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       color = "Region",
+       caption = "Quelle: Statistisches Bundesamt (Verdienststrukturerhebung ab 2006)") +
+  
+  theme_gpg() +
+  theme(plot.caption = element_text(hjust = 0, size = 8, color = "gray50"))
+```
+
+```{r ost-west-statistiken}
+# Vergleichsstatistiken NUR für verfügbare Jahre
+ost_west_stats <- gpg_regional_verfuegbar %>%
+  summarise(
+    `Mittelwert West (2006-2024)` = round(mean(gpg_west, na.rm = TRUE), 2),
+    `Mittelwert Ost (2006-2024)` = round(mean(gpg_ost, na.rm = TRUE), 2),
+    `Durchschnittliche Differenz` = round(mean(gpg_west - gpg_ost, na.rm = TRUE), 2),
+    `Aktuelle Differenz (2024)` = gpg_west[year == 2024] - gpg_ost[year == 2024]
+  )
+
+kable(t(ost_west_stats), 
+      col.names = c("Wert (%)"),
+      caption = "Tabelle 2: Ost-West-Vergleich des Gender Pay Gap (2006-2024)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+```
+
+**Interpretation:**
+
+- Der Gender Pay Gap in **Ostdeutschland** liegt konstant deutlich niedriger (Ø `r round(mean(gpg_regional_verfuegbar$gpg_ost, na.rm = TRUE), 1)`%) als in **Westdeutschland** (Ø `r round(mean(gpg_regional_verfuegbar$gpg_west, na.rm = TRUE), 1)`%)
+- Aktuelle Werte 2024: West **17%**, Ost **5%** - Differenz von **12 Prozentpunkten**
+- Mögliche Gründe: Höhere Erwerbsbeteiligung von Frauen in Ostdeutschland, weniger Teilzeitarbeit, andere Branchenstruktur
+- Die Differenz hat sich im Zeitverlauf leicht verringert (2006: 18 PP, 2024: 12 PP)
+
+## Periodenanalyse
+
+```{r perioden-analyse}
+# Periodenvergleich
+perioden <- list(
+  "1995-2000" = 1995:2000,
+  "2001-2005" = 2001:2005,
+  "2006-2010" = 2006:2010,
+  "2011-2015" = 2011:2015,
+  "2016-2020" = 2016:2020,
+  "2021-2024" = 2021:2024
+)
+
+perioden_analyse <- map_df(names(perioden), function(periode_name) {
+  jahre <- perioden[[periode_name]]
+  daten <- gpg_komplett %>% filter(year %in% jahre)
+  
+  data.frame(
+    Periode = periode_name,
+    `Ø Deutschland` = round(mean(daten$gpg_gesamt, na.rm = TRUE), 1),
+    `Ø West` = if (all(is.na(daten$gpg_west))) NA_real_
+               else round(mean(daten$gpg_west, na.rm = TRUE), 1),
+    `Ø Ost` = if (all(is.na(daten$gpg_ost))) NA_real_
+              else round(mean(daten$gpg_ost, na.rm = TRUE), 1),
+    `Veränderung` = round(
+      daten$gpg_gesamt[length(daten$gpg_gesamt)] -
+      daten$gpg_gesamt[1], 1
+    ),
+    check.names = FALSE
+  )
+})
+
+kable(
+  perioden_analyse %>%
+    mutate(across(starts_with("Ø"),
+                  ~ ifelse(is.na(.), "–", .))),
+  caption = "Tabelle 3: Gender Pay Gap nach Zeitperioden",
+  align = c('l','r','r','r','r')
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  row_spec(which(as.numeric(perioden_analyse$Veränderung) < 0),
+            background = "#d4edda") %>%
+  footnote(
+    general = "– = Daten nicht verfügbar (regionale Differenzierung erst ab 2006)",
+    general_title = "Hinweis:"
+  )
+
+
+```
+
+**Interpretation:**
+
+- **1995-2015**: Weitgehende Stagnation, nur geringe Veränderungen
+- **2016-2020**: Beginnender Rückgang um 2 Prozentpunkte
+- **2021-2024**: Beschleunigter Rückgang um weitere 2 Prozentpunkte
+- Regionale Daten zeigen ab 2006 durchgehend niedrigere Werte in Ostdeutschland
+
+## Trendanalyse
+
+```{r trend-analyse}
+# Lineare Regression für Gesamtdeutschland
+model_gesamt <- lm(gpg_gesamt ~ year, data = gpg_komplett)
+model_frueh <- lm(gpg_gesamt ~ year, data = gpg_komplett %>% filter(year <= 2010))
+model_spaet <- lm(gpg_gesamt ~ year, data = gpg_komplett %>% filter(year > 2010))
+
+# Für Ost/West nur ab 2006
+model_west <- lm(gpg_west ~ year, data = gpg_regional_verfuegbar)
+model_ost <- lm(gpg_ost ~ year, data = gpg_regional_verfuegbar)
+
+trend_stats <- data.frame(
+  Zeitraum = c("Deutschland 1995-2024", "Deutschland 1995-2010", "Deutschland 2011-2024",
+               "West 2006-2024", "Ost 2006-2024"),
+  `Jährliche Veränderung` = c(
+    round(coef(model_gesamt)[2], 3),
+    round(coef(model_frueh)[2], 3),
+    round(coef(model_spaet)[2], 3),
+    round(coef(model_west)[2], 3),
+    round(coef(model_ost)[2], 3)
+  ),
+  `R²` = c(
+    round(summary(model_gesamt)$r.squared, 3),
+    round(summary(model_frueh)$r.squared, 3),
+    round(summary(model_spaet)$r.squared, 3),
+    round(summary(model_west)$r.squared, 3),
+    round(summary(model_ost)$r.squared, 3)
+  ),
+  `p-Wert` = c(
+    format.pval(summary(model_gesamt)$coefficients[2,4], digits=3),
+    format.pval(summary(model_frueh)$coefficients[2,4], digits=3),
+    format.pval(summary(model_spaet)$coefficients[2,4], digits=3),
+    format.pval(summary(model_west)$coefficients[2,4], digits=3),
+    format.pval(summary(model_ost)$coefficients[2,4], digits=3)
+  ),
+  check.names = FALSE
+)
+
+kable(trend_stats,
+      caption = "Tabelle 4: Lineare Trendanalyse",
+      align = c('l', 'r', 'r', 'r')) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+```
+
+**Interpretation:**
+
+- **Gesamtzeitraum**: Durchschnittlicher Rückgang von **`r abs(round(coef(model_gesamt)[2], 3))` Prozentpunkten pro Jahr**
+- **1995-2010**: Nahezu stagnierend (`r round(coef(model_frueh)[2], 3)` PP/Jahr)
+- **2011-2024**: Deutlich stärkerer Rückgang (`r abs(round(coef(model_spaet)[2], 3))` PP/Jahr)
+- **Westdeutschland**: Rückgang von `r abs(round(coef(model_west)[2], 3))` PP/Jahr (seit 2006)
+- **Ostdeutschland**: Rückgang von `r abs(round(coef(model_ost)[2], 3))` PP/Jahr (seit 2006)
+- Alle Trends sind statistisch hochsignifikant (p < 0.001)
+
+## Bereinigter vs. Unbereinigter Gender Pay Gap
+
+```{r bereinigt-unbereinigt, fig.cap="Abbildung 3: Bereinigter vs. Unbereinigter Gender Pay Gap"}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Daten vorbereiten
+gpg_vergleich <- gpg_komplett %>%
+  filter(!is.na(gpg_bereinigt_gesamt)) %>%
+  select(year, gpg_gesamt, gpg_bereinigt_gesamt) %>%
+  pivot_longer(
+    cols = c(gpg_gesamt, gpg_bereinigt_gesamt),
+    names_to = "typ",
+    values_to = "wert"
+  ) %>%
+  mutate(
+    typ = factor(
+      typ,
+      levels = c("gpg_gesamt", "gpg_bereinigt_gesamt"),
+      labels = c("Unbereinigt", "Bereinigt")
+    ),
+    year = factor(year)  # Jahre als Faktor → gleichmäßige Balken
+  )
+
+# Gewünschte Jahre für die Beschriftung
+label_years <- c("2006", "2010", "2014", "2018", "2022", "2023", "2024")
+
+# Plot
+ggplot(gpg_vergleich, aes(x = year, y = wert, fill = typ)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = c("#D55E00", "#0072B2")) +
+  scale_y_continuous(
+    limits = c(0, 25),
+    breaks = seq(0, 25, 5),
+    labels = function(x) paste0(x, "%")
+  ) +
+  scale_x_discrete(
+    breaks = label_years  # nur ausgewählte Jahre beschriften
+  ) +
+  labs(
+    title = "Bereinigter vs. Unbereinigter Gender Pay Gap",
+    subtitle = "Deutschland gesamt (verfügbare Jahre)",
+    x = "Jahr",
+    y = "Gender Pay Gap (%)",
+    fill = "Typ",
+    caption = "Quelle: Statistisches Bundesamt\nBereinigte Werte: 2006-2018 alle 4 Jahre, ab 2022 jährlich"
+  ) +
+  theme_gpg() +
+  theme(
+    plot.caption = element_text(hjust = 0, size = 8, color = "gray50")
+  )
+
+```
+
+```{r erklaerungsanteile, fig.cap="Abbildung 4: Zusammensetzung des Gender Pay Gap"}
+gpg_differenz <- gpg_komplett %>%
+  filter(!is.na(gpg_bereinigt_gesamt)) %>%
+  mutate(
+    erklaert = gpg_gesamt - gpg_bereinigt_gesamt,
+    unerklaert = gpg_bereinigt_gesamt
+  ) %>%
+  select(year, erklaert, unerklaert) %>%
+  pivot_longer(cols = c(erklaert, unerklaert),
+               names_to = "komponente",
+               values_to = "wert") %>%
+  mutate(komponente = factor(komponente,
+                              levels = c("erklaert", "unerklaert"),
+                              labels = c("Erklärt (strukturelle Faktoren)", 
+                                        "Unerklärter Rest")))
+
+ggplot(gpg_differenz, aes(x = year, y = wert, fill = komponente)) +
+  geom_col(position = "stack", width = 0.6) +
+  
+  geom_text(data = gpg_differenz %>% 
+              filter(komponente == "Unerklärter Rest"),
+            aes(label = paste0(wert, "%")),
+            position = position_stack(vjust = 0.5),
+            size = 3.5,
+            color = "white",
+            fontface = "bold") +
+  
+  scale_fill_manual(values = c("#009E73", "#CC79A7")) +
+  scale_y_continuous(limits = c(0, 25),
+                     breaks = seq(0, 25, 5),
+                     labels = function(x) paste0(x, "%")) +
+  scale_x_continuous(breaks = c(2006, 2010, 2014, 2018, 2022, 2023, 2024)) +
+  
+  labs(title = "Zusammensetzung des Gender Pay Gap",
+       subtitle = "Erklärter vs. unerklärter Anteil",
+       x = "Jahr",
+       y = "Gender Pay Gap (%)",
+       fill = "") +
+  
+  theme_gpg()
+```
+
+```{r erklaerungsanteile-tabelle}
+gpg_erklaerung <- gpg_komplett %>%
+  filter(!is.na(gpg_bereinigt_gesamt)) %>%
+  mutate(
+    `Erklärbarer Anteil` = gpg_gesamt - gpg_bereinigt_gesamt,
+    `Erklärbarer Anteil %` = round(((`Erklärbarer Anteil` / gpg_gesamt) * 100), 1),
+    `Unerklärter Anteil %` = round(100 - `Erklärbarer Anteil %`, 1)
+  ) %>%
+  select(Jahr = year, 
+         `Unbereinigt` = gpg_gesamt, 
+         `Bereinigt` = gpg_bereinigt_gesamt,
+         `Erklärbarer Anteil`,
+         `Erklärbarer Anteil %`,
+         `Unerklärter Anteil %`)
+
+kable(gpg_erklaerung,
+      caption = "Tabelle 5: Erklärbare und unerklärbare Anteile des Gender Pay Gap",
+      align = c('r', 'r', 'r', 'r', 'r', 'r')) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+
+
+```
+
+**Interpretation:**
+
+- Im Durchschnitt können **ca. `r round(mean(gpg_erklaerung$"Erklärbarer Anteil %"), 0)`%** des Gender Pay Gap durch strukturelle Faktoren erklärt werden (Bildung, Beruf, Branche, Arbeitszeit)
+- Die verbleibenden **ca. `r round(mean(gpg_erklaerung$"Unerklärter Anteil %"), 0)`%** bleiben unerklärbar und deuten auf potenzielle Diskriminierung hin
+- Der bereinigte GPG liegt 2024 bei **6%** - dies ist der Lohnunterschied, der auch bei gleichen messbaren Merkmalen bestehen bleibt
+
+# Zwischenfazit
+
+## Zentrale Erkenntnisse zur Entwicklung in Deutschland
+
+1. **Rückgang des GPG**: Von 21% (1995) auf 16% (2024) - Verbesserung um 5 Prozentpunkte
+2. **Zwei Phasen**: Stagnation bis 2013, dann deutlicher Rückgang ab 2019
+3. **Regionale Unterschiede** (ab 2006): Ost (Ø 7%) deutlich niedriger als West (Ø 22%)
+4. **Erklärungsanteile**: Rund 2/3 strukturell erklärbar, 1/3 potenziell diskriminierend
+5. **Gesetzliche Reformen**: Mögliche Effekte des Entgelttransparenzgesetzes ab 2019 erkennbar
+
+## Methodische Einschränkungen
+
+- **Regionale Daten**: Ost-West-Differenzierung erst ab 2006 verfügbar aufgrund unterschiedlicher Datenquellen
+- **Bereinigte Werte**: Bis 2018 nur alle 4 Jahre, ab 2022 jährlich verfügbar
+- **Datenquellenwechsel**: 1995-2001 (ECHP), 2002-2005 (SOEP), ab 2006 (VSE), ab 2022 (neue Erhebung)
+
